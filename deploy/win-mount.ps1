@@ -1,6 +1,9 @@
-# Teldrive -> Windows 盘符（rclone Teldrive 分支 + WinFsp + SSH 隧道）
-# 用法（PowerShell 里粘贴）：
-#   powershell -ExecutionPolicy Bypass -c "irm https://raw.githubusercontent.com/charleswei118/Telegram-Drive/main/deploy/win-mount.ps1 | iex"
+﻿# Teldrive -> Windows 盘符（rclone Teldrive 分支 + WinFsp + SSH 隧道）
+# 用法（PowerShell 里逐行执行，先下载到本地再运行）：
+#   cd $env:USERPROFILE\Downloads
+#   iwr https://raw.githubusercontent.com/charleswei118/Telegram-Drive/main/deploy/win-mount.ps1 -OutFile win-mount.ps1
+#   Set-ExecutionPolicy -Scope Process Bypass -Force
+#   .\win-mount.ps1
 # 不会改动你已安装的 rclone 和它的配置；所有文件放在 %LOCALAPPDATA%\teldrive-mount
 
 $ErrorActionPreference = 'Stop'
