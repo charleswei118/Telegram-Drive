@@ -50,19 +50,24 @@ if (-not (Test-Path $Rclone)) {
 
 # 4. 收集信息
 $Ip    = Ask "VPS 公网 IP" ""
-$User  = Ask "SSH 用户名" "ubuntu"
+$User  = Ask "SSH 用户名（Lightsail Debian 是 admin）" "admin"
 $Pem   = Ask "私钥 .pem 的完整路径（可把文件拖进窗口）" ""
 $Pem   = [Environment]::ExpandEnvironmentVariables($Pem)
 $Drive = Ask "挂载到哪个盘符" "T:"
 if ($Drive -notmatch ':$') { $Drive = "${Drive}:" }
 $Enc   = Ask "服务端配了 encryption-key，rclone 上传也加密吗？(y/n)" "y"
-Write-Host "Token：浏览器登录 Teldrive 后，F12 -> Application -> Cookies -> 复制 access_token 的值"
-$sec   = Read-Host "粘贴 access_token（输入不会显示）" -AsSecureString
+Write-Host "API Key：网页登录 Teldrive -> Settings -> API keys -> 新建一个（名字随意），复制生成的 Key"
+$sec   = Read-Host "粘贴 API Key（输入不会显示）" -AsSecureString
 $Token = [Runtime.InteropServices.Marshal]::PtrToStringAuto([Runtime.InteropServices.Marshal]::SecureStringToBSTR($sec))
 if (-not $Ip -or -not (Test-Path $Pem) -or -not $Token) { Write-Host "IP / 私钥路径 / Token 有误，已退出" -ForegroundColor Red; return }
 
 # Windows 的 ssh 要求私钥只有自己能读
 icacls $Pem /inheritance:r /grant:r "${env:USERNAME}:R" | Out-Null
+
+# 先测一次 SSH，能连上再继续
+Write-Host "测试 SSH 连接..."
+ssh -i "$Pem" -o BatchMode=yes -o ConnectTimeout=10 -o StrictHostKeyChecking=accept-new "$User@$Ip" "curl -s -o /dev/null -w %{http_code} http://127.0.0.1:8080/ || echo noweb"
+if ($LASTEXITCODE -ne 0) { Write-Host "SSH 连不上：检查 IP、用户名 admin、私钥是否对应这台实例，以及 Lightsail 防火墙是否放行 22 端口" -ForegroundColor Red; return }
 
 # 5. 专用 rclone 配置
 $Conf = Join-Path $Dir 'rclone.conf'
@@ -71,11 +76,10 @@ $encFlag = if ($Enc -match '^[yY]') { 'true' } else { 'false' }
 [teldrive]
 type = teldrive
 api_host = http://127.0.0.1:18080
-access_token = $Token
+api_key = $Token
 chunk_size = 500M
 upload_concurrency = 4
 encrypt_files = $encFlag
-random_chunk_name = true
 "@ | Set-Content -Path $Conf -Encoding ASCII
 icacls $Conf /inheritance:r /grant:r "${env:USERNAME}:F" | Out-Null
 
@@ -85,9 +89,11 @@ $Start = Join-Path $Dir 'start.ps1'
 `$ErrorActionPreference = 'Stop'
 Get-Process rclone -ErrorAction SilentlyContinue | Where-Object { `$_.Path -eq '$Rclone' } | Stop-Process -Force
 Start-Process ssh -WindowStyle Hidden -ArgumentList '-i "$Pem" -N -o StrictHostKeyChecking=accept-new -o ServerAliveInterval=30 -o ExitOnForwardFailure=yes -L 18080:127.0.0.1:8080 $User@$Ip'
-for (`$i=0; `$i -lt 20; `$i++) { if ((Test-NetConnection 127.0.0.1 -Port 18080 -WarningAction SilentlyContinue).TcpTestSucceeded) { break }; Start-Sleep 1 }
+`$ok = `$false
+for (`$i=0; `$i -lt 20; `$i++) { if ((Test-NetConnection 127.0.0.1 -Port 18080 -WarningAction SilentlyContinue).TcpTestSucceeded) { `$ok = `$true; break }; Start-Sleep 1 }
+if (-not `$ok) { Write-Host 'SSH 隧道没建立，检查网络/私钥/22 端口' -ForegroundColor Red; return }
 Start-Process '$Rclone' -WindowStyle Hidden -ArgumentList 'mount teldrive: $Drive --config "$Conf" --vfs-cache-mode full --cache-dir "$Dir\cache" --vfs-cache-max-size 20G --vfs-read-chunk-size 32M --vfs-read-chunk-streams 4 --volname Teldrive --log-file "$Dir\rclone.log" --log-level INFO'
-Start-Sleep 4
+for (`$i=0; `$i -lt 15; `$i++) { if (Test-Path '$Drive\') { break }; Start-Sleep 1 }
 if (Test-Path '$Drive\') { Write-Host 'Teldrive 已挂载到 $Drive' -ForegroundColor Green } else { Write-Host '挂载失败，查看日志: $Dir\rclone.log' -ForegroundColor Red }
 "@ | Set-Content -Path $Start -Encoding UTF8
 
