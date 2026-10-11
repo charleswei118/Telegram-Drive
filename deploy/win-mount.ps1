@@ -52,6 +52,7 @@ if (-not (Test-Path $Rclone)) {
 $Ip    = Ask "VPS 公网 IP" ""
 $User  = Ask "SSH 用户名" "ubuntu"
 $Pem   = Ask "私钥 .pem 的完整路径（可把文件拖进窗口）" ""
+$Pem   = [Environment]::ExpandEnvironmentVariables($Pem)
 $Drive = Ask "挂载到哪个盘符" "T:"
 if ($Drive -notmatch ':$') { $Drive = "${Drive}:" }
 $Enc   = Ask "服务端配了 encryption-key，rclone 上传也加密吗？(y/n)" "y"
